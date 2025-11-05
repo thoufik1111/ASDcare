@@ -2,21 +2,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { 
-  Calendar, 
-  Heart, 
-  Download, 
-  Phone, 
-  Clock,
-  CheckCircle2,
-  Circle,
-  Smile,
-  Meh,
-  Frown,
-} from 'lucide-react';
+import { Calendar, Download, Phone, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { ScoringResult, getScheduleComplexity } from '@/utils/scoring';
 import { ParentMetadata } from '@/data/questionBanks';
 import jsPDF from 'jspdf';
+import TaskCard, { TaskTheme } from './TaskCard';
+import MoodCheck from './MoodCheck';
+import AccessibilityControls from './AccessibilityControls';
+import { useProgressTracking } from '@/hooks/useProgressTracking';
+import { useEffect } from 'react';
 
 interface DashboardProps {
   role: 'individual' | 'parent' | 'clinician';
@@ -27,6 +21,7 @@ interface DashboardProps {
 
 export default function Dashboard({ role, result, metadata, onNavigateToCalmZone }: DashboardProps) {
   const schedule = getScheduleComplexity(result.severity);
+  const { addEntry, getRecentEntries, getTrend } = useProgressTracking();
   
   const severityColors = {
     low: 'mint',
@@ -38,6 +33,12 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
   const accentColor = severityColors[result.severity];
 
   const tasks = generateTasks(result.severity, schedule.taskCount);
+  const recentHistory = getRecentEntries(3);
+  const trend = getTrend();
+
+  useEffect(() => {
+    addEntry(result, role);
+  }, []);
 
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
@@ -73,6 +74,7 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
 
   return (
     <div className="min-h-screen p-4 md:p-8">
+      <AccessibilityControls />
       <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -142,58 +144,24 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
             </CardHeader>
             <CardContent className="space-y-3">
               {tasks.map((task, index) => (
-                <Card key={index} className={`p-4 border-l-4 border-l-${accentColor}`}>
-                  <div className="flex items-start gap-3">
-                    {task.completed ? (
-                      <CheckCircle2 className={`w-5 h-5 text-${accentColor} flex-shrink-0`} />
-                    ) : (
-                      <Circle className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-                    )}
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <h4 className="font-semibold">{task.title}</h4>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Clock className="w-4 h-4" />
-                          {task.duration}
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{task.description}</p>
-                      {role === 'parent' && task.parentTip && (
-                        <p className="text-sm text-primary mt-2">💡 {task.parentTip}</p>
-                      )}
-                    </div>
-                  </div>
-                </Card>
+                <TaskCard
+                  key={index}
+                  title={task.title}
+                  description={task.description}
+                  duration={task.duration}
+                  completed={task.completed}
+                  theme={task.theme}
+                  parentTip={task.parentTip}
+                  accentColor={accentColor}
+                  showParentTip={role === 'parent'}
+                />
               ))}
             </CardContent>
           </Card>
 
           {/* Quick Actions */}
           <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Heart className="w-5 h-5" />
-                  Quick Mood Check
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-around">
-                  <button className="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-accent transition-colors">
-                    <Smile className="w-8 h-8 text-mint" />
-                    <span className="text-xs">Good</span>
-                  </button>
-                  <button className="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-accent transition-colors">
-                    <Meh className="w-8 h-8 text-bright-blue" />
-                    <span className="text-xs">Okay</span>
-                  </button>
-                  <button className="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-accent transition-colors">
-                    <Frown className="w-8 h-8 text-coral" />
-                    <span className="text-xs">Tough</span>
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
+            <MoodCheck result={result} />
 
             <Card className={`bg-${accentColor}/10 border-${accentColor}`}>
               <CardHeader>
@@ -214,16 +182,35 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
 
             <Card>
               <CardHeader>
-                <CardTitle>Progress</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  Progress Tracking
+                  {trend === 'improving' && <TrendingUp className="w-4 h-4 text-mint" />}
+                  {trend === 'declining' && <TrendingDown className="w-4 h-4 text-coral" />}
+                  {trend === 'stable' && <Minus className="w-4 h-4 text-bright-blue" />}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span>Tasks Completed</span>
-                    <span>2/7</span>
+                    <span>2/{tasks.length}</span>
                   </div>
-                  <Progress value={28} className="h-2" />
+                  <Progress value={(2 / tasks.length) * 100} className="h-2" />
                 </div>
+                
+                {recentHistory.length > 0 && (
+                  <div className="pt-3 border-t">
+                    <p className="text-sm font-medium mb-2">Recent Assessments</p>
+                    <div className="space-y-1">
+                      {recentHistory.map((entry, idx) => (
+                        <div key={idx} className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">{entry.date}</span>
+                          <span className="font-medium">{entry.score}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -234,13 +221,21 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
 }
 
 function generateTasks(severity: ScoringResult['severity'], count: number) {
-  const taskPool = [
+  const taskPool: Array<{
+    title: string;
+    description: string;
+    duration: string;
+    parentTip: string;
+    completed: boolean;
+    theme: TaskTheme;
+  }> = [
     {
       title: 'Morning Routine',
       description: 'Complete morning self-care activities',
       duration: '15 min',
       parentTip: 'Use visual schedule cards to help guide each step',
       completed: true,
+      theme: 'morning',
     },
     {
       title: 'Sensory Break',
@@ -248,6 +243,7 @@ function generateTasks(severity: ScoringResult['severity'], count: number) {
       duration: '10 min',
       parentTip: 'Offer fidget toys or weighted blanket',
       completed: true,
+      theme: 'morning',
     },
     {
       title: 'Learning Activity',
@@ -255,6 +251,15 @@ function generateTasks(severity: ScoringResult['severity'], count: number) {
       duration: severity === 'high' ? '8 min' : '20 min',
       parentTip: 'Break into 2-minute segments with rewards',
       completed: false,
+      theme: 'afternoon',
+    },
+    {
+      title: 'Lunch & Nutrition',
+      description: 'Healthy meal time',
+      duration: '30 min',
+      parentTip: 'Introduce new foods gradually',
+      completed: false,
+      theme: 'afternoon',
     },
     {
       title: 'Social Interaction',
@@ -262,6 +267,7 @@ function generateTasks(severity: ScoringResult['severity'], count: number) {
       duration: '12 min',
       parentTip: 'Start with one-on-one interaction',
       completed: false,
+      theme: 'afternoon',
     },
     {
       title: 'Physical Activity',
@@ -269,6 +275,15 @@ function generateTasks(severity: ScoringResult['severity'], count: number) {
       duration: '15 min',
       parentTip: 'Allow for breaks and water as needed',
       completed: false,
+      theme: 'evening',
+    },
+    {
+      title: 'Nature Time',
+      description: 'Outdoor relaxation',
+      duration: '20 min',
+      parentTip: 'Let them explore at their own pace',
+      completed: false,
+      theme: 'evening',
     },
     {
       title: 'Quiet Time',
@@ -276,13 +291,23 @@ function generateTasks(severity: ScoringResult['severity'], count: number) {
       duration: '20 min',
       parentTip: 'Provide calming activities like coloring',
       completed: false,
+      theme: 'evening',
     },
     {
-      title: 'Creative Play',
-      description: 'Open-ended creative activity',
-      duration: '18 min',
-      parentTip: 'Join in and model appropriate play',
+      title: 'Bedtime Routine',
+      description: 'Wind down for sleep',
+      duration: '25 min',
+      parentTip: 'Maintain consistent bedtime schedule',
       completed: false,
+      theme: 'night',
+    },
+    {
+      title: 'Story Time',
+      description: 'Calming bedtime story',
+      duration: '15 min',
+      parentTip: 'Use predictable, favorite stories',
+      completed: false,
+      theme: 'night',
     },
   ];
 
