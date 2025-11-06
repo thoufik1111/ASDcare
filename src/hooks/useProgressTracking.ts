@@ -47,7 +47,7 @@ export function useProgressTracking() {
   };
 
   const getTrend = () => {
-    if (history.length < 2) return 'neutral';
+    if (history.length < 2) return 'stable';
     const recent = history.slice(-3);
     const scores = recent.map(e => e.score);
     const avg = scores.reduce((a, b) => a + b, 0) / scores.length;

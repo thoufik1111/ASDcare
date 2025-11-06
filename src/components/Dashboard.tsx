@@ -2,13 +2,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Calendar, Download, Phone, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Calendar, Download, Phone, Gamepad2 } from 'lucide-react';
 import { ScoringResult, getScheduleComplexity } from '@/utils/scoring';
 import { ParentMetadata } from '@/data/questionBanks';
 import jsPDF from 'jspdf';
 import TaskCard, { TaskTheme } from './TaskCard';
 import MoodCheck from './MoodCheck';
 import AccessibilityControls from './AccessibilityControls';
+import ProgressChart from './ProgressChart';
 import { useProgressTracking } from '@/hooks/useProgressTracking';
 import { useEffect } from 'react';
 
@@ -21,7 +22,7 @@ interface DashboardProps {
 
 export default function Dashboard({ role, result, metadata, onNavigateToCalmZone }: DashboardProps) {
   const schedule = getScheduleComplexity(result.severity);
-  const { addEntry, getRecentEntries, getTrend } = useProgressTracking();
+  const { addEntry, history, getTrend } = useProgressTracking();
   
   const severityColors = {
     low: 'mint',
@@ -33,7 +34,6 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
   const accentColor = severityColors[result.severity];
 
   const tasks = generateTasks(result.severity, schedule.taskCount);
-  const recentHistory = getRecentEntries(3);
   const trend = getTrend();
 
   useEffect(() => {
@@ -42,34 +42,147 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
 
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
+    let yPos = 20;
     
-    doc.setFontSize(20);
-    doc.text('AutiCare Assessment Summary', 20, 20);
+    // Header
+    doc.setFontSize(24);
+    doc.setTextColor(11, 37, 69);
+    doc.text('AutiCare Assessment Report', 20, yPos);
+    yPos += 15;
     
-    doc.setFontSize(12);
-    doc.text(`Assessment Score: ${result.normalizedScore}`, 20, 40);
-    doc.text(`Severity Level: ${result.severityLabel}`, 20, 50);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 60);
+    // Divider
+    doc.setDrawColor(47, 155, 255);
+    doc.setLineWidth(0.5);
+    doc.line(20, yPos, 190, yPos);
+    yPos += 10;
     
-    doc.text('Top Contributing Factors:', 20, 80);
-    result.topContributors.forEach((contrib, index) => {
-      doc.text(`${index + 1}. ${contrib.question}`, 20, 90 + (index * 10));
-    });
+    // Assessment Details
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Assessment Overview', 20, yPos);
+    yPos += 8;
     
-    doc.text('Recommended Next Steps:', 20, 130);
-    const recommendations = getRecommendations(result.severity);
-    recommendations.forEach((rec, index) => {
-      doc.text(`- ${rec}`, 20, 140 + (index * 10));
-    });
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Score: ${result.normalizedScore}/100`, 20, yPos);
+    yPos += 6;
+    doc.text(`Severity: ${result.severityLabel}`, 20, yPos);
+    yPos += 6;
+    doc.text(`Role: ${role.charAt(0).toUpperCase() + role.slice(1)}`, 20, yPos);
+    yPos += 6;
+    doc.text(`Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`, 20, yPos);
+    yPos += 12;
     
     if (metadata) {
-      doc.text(`Child Name: ${metadata.childName}`, 20, 180);
-      doc.text(`Age: ${metadata.childAge}`, 20, 190);
+      doc.setFont(undefined, 'bold');
+      doc.text('Child Information', 20, yPos);
+      yPos += 8;
+      doc.setFont(undefined, 'normal');
+      doc.text(`Name: ${metadata.childName}`, 20, yPos);
+      yPos += 6;
+      doc.text(`Age: ${metadata.childAge}`, 20, yPos);
+      yPos += 6;
+      if (metadata.pronouns) doc.text(`Pronouns: ${metadata.pronouns}`, 20, yPos);
+      yPos += 6;
+      if (metadata.homeLanguage) doc.text(`Home Language: ${metadata.homeLanguage}`, 20, yPos);
+      yPos += 12;
     }
     
-    doc.text(`Consent timestamp: ${new Date().toISOString()}`, 20, 210);
+    // Contributing Factors
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(14);
+    doc.text('Top Contributing Factors', 20, yPos);
+    yPos += 8;
     
-    doc.save('auticare-assessment-summary.pdf');
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    result.topContributors.forEach((contrib, index) => {
+      const lines = doc.splitTextToSize(`${index + 1}. ${contrib.question} (Contribution: ${contrib.contribution.toFixed(1)})`, 170);
+      doc.text(lines, 20, yPos);
+      yPos += lines.length * 5 + 3;
+    });
+    yPos += 5;
+    
+    // Schedule Complexity
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(14);
+    doc.text('Recommended Schedule', 20, yPos);
+    yPos += 8;
+    
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Complexity Level: ${schedule.level}`, 20, yPos);
+    yPos += 6;
+    doc.text(`Daily Tasks: ${schedule.taskCount}`, 20, yPos);
+    yPos += 6;
+    const scheduleDesc = doc.splitTextToSize(schedule.description, 170);
+    doc.text(scheduleDesc, 20, yPos);
+    yPos += scheduleDesc.length * 5 + 8;
+    
+    // Recommendations
+    if (yPos > 240) {
+      doc.addPage();
+      yPos = 20;
+    }
+    
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(14);
+    doc.text('Recommended Next Steps', 20, yPos);
+    yPos += 8;
+    
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    const recommendations = getRecommendations(result.severity);
+    recommendations.forEach((rec, index) => {
+      const lines = doc.splitTextToSize(`${index + 1}. ${rec}`, 170);
+      doc.text(lines, 20, yPos);
+      yPos += lines.length * 5 + 3;
+    });
+    yPos += 10;
+    
+    // Progress Summary
+    if (history.length > 1) {
+      if (yPos > 240) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(14);
+      doc.text('Progress Summary', 20, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'normal');
+      const recentEntries = history.slice(-5).reverse();
+      doc.text('Recent Assessment Scores:', 20, yPos);
+      yPos += 6;
+      
+      recentEntries.forEach((entry) => {
+        doc.text(`${entry.date}: ${entry.score} (${entry.severity})`, 25, yPos);
+        yPos += 5;
+      });
+      yPos += 5;
+      
+      doc.text(`Trend: ${trend === 'improving' ? 'Improving ↑' : trend === 'declining' ? 'Declining ↓' : 'Stable →'}`, 20, yPos);
+      yPos += 10;
+    }
+    
+    // Footer
+    if (yPos > 260) {
+      doc.addPage();
+      yPos = 20;
+    }
+    
+    doc.setFontSize(8);
+    doc.setTextColor(128, 128, 128);
+    doc.text(`Generated: ${new Date().toISOString()}`, 20, yPos);
+    yPos += 4;
+    doc.text('This report is for informational purposes only and does not constitute medical advice.', 20, yPos);
+    yPos += 4;
+    doc.text('Please consult with a qualified healthcare professional for diagnosis and treatment.', 20, yPos);
+    
+    doc.save(`auticare-report-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   return (
@@ -90,9 +203,15 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
           </div>
           
           <div className="flex gap-3">
+            {result.normalizedScore > 70 && (
+              <Button variant="outline" className="bg-lavender/10 border-lavender hover:bg-lavender/20">
+                <Gamepad2 className="w-4 h-4 mr-2" />
+                Play Games
+              </Button>
+            )}
             <Button variant="outline" onClick={handleDownloadPDF}>
               <Download className="w-4 h-4 mr-2" />
-              Download Summary
+              Download Report
             </Button>
             {result.severity === 'high' && (
               <Button className="bg-coral hover:bg-coral/90">
@@ -180,39 +299,15 @@ export default function Dashboard({ role, result, metadata, onNavigateToCalmZone
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  Progress Tracking
-                  {trend === 'improving' && <TrendingUp className="w-4 h-4 text-mint" />}
-                  {trend === 'declining' && <TrendingDown className="w-4 h-4 text-coral" />}
-                  {trend === 'stable' && <Minus className="w-4 h-4 text-bright-blue" />}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Tasks Completed</span>
-                    <span>2/{tasks.length}</span>
-                  </div>
-                  <Progress value={(2 / tasks.length) * 100} className="h-2" />
-                </div>
-                
-                {recentHistory.length > 0 && (
-                  <div className="pt-3 border-t">
-                    <p className="text-sm font-medium mb-2">Recent Assessments</p>
-                    <div className="space-y-1">
-                      {recentHistory.map((entry, idx) => (
-                        <div key={idx} className="flex justify-between text-xs">
-                          <span className="text-muted-foreground">{entry.date}</span>
-                          <span className="font-medium">{entry.score}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-medium">Today's Progress</span>
+                <span className="text-muted-foreground">2/{tasks.length}</span>
+              </div>
+              <Progress value={(2 / tasks.length) * 100} className="h-2" />
+            </div>
+
+            <ProgressChart history={history} trend={trend} />
           </div>
         </div>
       </div>
